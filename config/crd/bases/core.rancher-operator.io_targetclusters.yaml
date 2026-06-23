@@ -14,7 +14,20 @@ spec:
     singular: targetcluster
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .status.kubernetesVersion
+      name: Version
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: TargetCluster is the Schema for the targetclusters API
@@ -39,10 +52,37 @@ spec:
           spec:
             description: spec defines the desired state of TargetCluster
             properties:
-              foo:
-                description: foo is an example field of TargetCluster. Edit targetcluster_types.go
-                  to remove/update
+              byo:
+                description: byo configures a Bring-Your-Own target cluster. Must
+                  be set when type is "byo".
+                properties:
+                  kubeconfigSecretRef:
+                    description: |-
+                      kubeconfigSecretRef points to a Secret in the same namespace as the
+                      TargetCluster containing a kubeconfig under .data[key].
+                    properties:
+                      key:
+                        default: kubeconfig
+                        description: key is the data key within the Secret that holds
+                          the kubeconfig bytes.
+                        type: string
+                      name:
+                        description: name is the Secret name in the same namespace
+                          as the TargetCluster.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - kubeconfigSecretRef
+                type: object
+              type:
+                description: type selects the provisioning mode for the target cluster.
+                enum:
+                - byo
                 type: string
+            required:
+            - type
             type: object
           status:
             description: status defines the observed state of TargetCluster
@@ -50,14 +90,7 @@ spec:
               conditions:
                 description: |-
                   conditions represent the current state of the TargetCluster resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Standard condition types: "Available", "Progressing", "Degraded".
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +149,25 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              kubernetesVersion:
+                description: kubernetesVersion is the server version reported by the
+                  target cluster.
+                type: string
+              nodeCount:
+                description: nodeCount is the number of Nodes observed on the target
+                  cluster.
+                format: int32
+                type: integer
+              observedGeneration:
+                description: observedGeneration is the .metadata.generation the status
+                  was last reconciled against.
+                format: int64
+                type: integer
+              ready:
+                description: |-
+                  ready reports whether the operator successfully reached the target cluster
+                  on its last reconcile.
+                type: boolean
             type: object
         required:
         - spec

@@ -21,38 +21,68 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// TargetClusterType discriminates the provisioning mode of a TargetCluster.
+// Only "byo" is implemented in v1alpha1; other values are reserved for future
+// provider integrations (k3s, rke2, gke, eks, aks).
+// +kubebuilder:validation:Enum=byo
+type TargetClusterType string
 
-// TargetClusterSpec defines the desired state of TargetCluster
+const (
+	TargetClusterTypeBYO TargetClusterType = "byo"
+)
+
+// TargetClusterSpec defines the desired state of TargetCluster.
 type TargetClusterSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// type selects the provisioning mode for the target cluster.
+	// +kubebuilder:validation:Required
+	Type TargetClusterType `json:"type"`
 
-	// foo is an example field of TargetCluster. Edit targetcluster_types.go to remove/update
+	// byo configures a Bring-Your-Own target cluster. Must be set when type is "byo".
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	BYO *BYOSpec `json:"byo,omitempty"`
+}
+
+// BYOSpec configures a target cluster the user has already provisioned.
+type BYOSpec struct {
+	// kubeconfigSecretRef points to a Secret in the same namespace as the
+	// TargetCluster containing a kubeconfig under .data[key].
+	// +kubebuilder:validation:Required
+	KubeconfigSecretRef KubeconfigSecretRef `json:"kubeconfigSecretRef"`
+}
+
+// KubeconfigSecretRef references a kubeconfig stored in a Secret.
+type KubeconfigSecretRef struct {
+	// name is the Secret name in the same namespace as the TargetCluster.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// key is the data key within the Secret that holds the kubeconfig bytes.
+	// +kubebuilder:default=kubeconfig
+	// +optional
+	Key string `json:"key,omitempty"`
 }
 
 // TargetClusterStatus defines the observed state of TargetCluster.
 type TargetClusterStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ready reports whether the operator successfully reached the target cluster
+	// on its last reconcile.
+	// +optional
+	Ready bool `json:"ready,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// kubernetesVersion is the server version reported by the target cluster.
+	// +optional
+	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
+
+	// nodeCount is the number of Nodes observed on the target cluster.
+	// +optional
+	NodeCount int32 `json:"nodeCount,omitempty"`
+
+	// observedGeneration is the .metadata.generation the status was last reconciled against.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions represent the current state of the TargetCluster resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// Standard condition types: "Available", "Progressing", "Degraded".
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,6 +91,10 @@ type TargetClusterStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Type",type=string,JSONPath=`.spec.type`
+// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.kubernetesVersion`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // TargetCluster is the Schema for the targetclusters API
 type TargetCluster struct {
