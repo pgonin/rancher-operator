@@ -1,0 +1,9 @@
+apiVersion: core.rancher-operator.io/v1alpha1
+kind: TargetCluster
+metadata:
+  labels:
+    app.kubernetes.io/name: rancher-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: targetcluster-sample
+spec:
+  # TODO(user): Add fields here

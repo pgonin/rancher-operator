@@ -1,0 +1,6 @@
+## Append samples of your project ##
+resources:
+- core_v1alpha1_targetcluster.yaml
+- core_v1alpha1_clusterprerequisites.yaml
+- core_v1alpha1_ranchermanager.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

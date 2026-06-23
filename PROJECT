@@ -8,4 +8,32 @@ layout:
 - go.kubebuilder.io/v4
 projectName: rancher-operator
 repo: github.com/pgonin/rancher-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: rancher-operator.io
+  group: core
+  kind: TargetCluster
+  path: github.com/pgonin/rancher-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: rancher-operator.io
+  group: core
+  kind: ClusterPrerequisites
+  path: github.com/pgonin/rancher-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: rancher-operator.io
+  group: core
+  kind: RancherManager
+  path: github.com/pgonin/rancher-operator/api/v1alpha1
+  version: v1alpha1
 version: "3"
