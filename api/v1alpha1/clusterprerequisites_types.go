@@ -21,38 +21,158 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// LocalObjectReference points to an object in the same namespace by name.
+type LocalObjectReference struct {
+	// name of the referenced object.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+}
 
-// ClusterPrerequisitesSpec defines the desired state of ClusterPrerequisites
+// IngressType enumerates supported ingress controllers.
+// +kubebuilder:validation:Enum=traefik
+type IngressType string
+
+const (
+	IngressTypeTraefik IngressType = "traefik"
+)
+
+// LoadBalancerType enumerates supported load-balancer strategies.
+// +kubebuilder:validation:Enum=cloud;metallb;none
+type LoadBalancerType string
+
+const (
+	// LoadBalancerTypeCloud relies on the cluster's cloud-controller-manager; nothing is installed.
+	LoadBalancerTypeCloud LoadBalancerType = "cloud"
+	// LoadBalancerTypeMetalLB installs MetalLB on the target cluster.
+	LoadBalancerTypeMetalLB LoadBalancerType = "metallb"
+	// LoadBalancerTypeNone means the user has provisioned their own load balancer.
+	LoadBalancerTypeNone LoadBalancerType = "none"
+)
+
+// ClusterPrerequisitesSpec defines the desired state of ClusterPrerequisites.
 type ClusterPrerequisitesSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// targetClusterRef points to a TargetCluster in the same namespace where the
+	// prerequisite components will be installed.
+	// +kubebuilder:validation:Required
+	TargetClusterRef LocalObjectReference `json:"targetClusterRef"`
 
-	// foo is an example field of ClusterPrerequisites. Edit clusterprerequisites_types.go to remove/update
+	// certManager configures the cert-manager installation. If omitted, cert-manager
+	// is not managed by this resource and is reported as skipped.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	CertManager *CertManagerComponent `json:"certManager,omitempty"`
+
+	// ingress configures the ingress controller installation. If omitted, no ingress
+	// controller is managed and the component is reported as skipped.
+	// +optional
+	Ingress *IngressComponent `json:"ingress,omitempty"`
+
+	// loadBalancer configures the load-balancer strategy. If omitted, the load
+	// balancer is reported as skipped.
+	// +optional
+	LoadBalancer *LoadBalancerComponent `json:"loadBalancer,omitempty"`
+}
+
+// CertManagerComponent configures cert-manager installation.
+type CertManagerComponent struct {
+	// enabled controls whether cert-manager is installed.
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled"`
+
+	// version pins the cert-manager Helm chart version. Defaults to a value
+	// chosen by the operator if unset.
+	// +optional
+	Version string `json:"version,omitempty"`
+}
+
+// IngressComponent configures the ingress-controller installation.
+type IngressComponent struct {
+	// enabled controls whether the ingress controller is installed.
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled"`
+
+	// type selects which ingress controller to install. Currently only "traefik"
+	// is supported.
+	// +kubebuilder:default=traefik
+	// +optional
+	Type IngressType `json:"type,omitempty"`
+
+	// version pins the ingress controller Helm chart version. Defaults to a value
+	// chosen by the operator if unset.
+	// +optional
+	Version string `json:"version,omitempty"`
+}
+
+// LoadBalancerComponent configures the load-balancer strategy.
+type LoadBalancerComponent struct {
+	// type selects the load-balancer strategy.
+	// +kubebuilder:validation:Required
+	Type LoadBalancerType `json:"type"`
+
+	// metallb carries MetalLB-specific configuration. Required when type is "metallb".
+	// +optional
+	MetalLB *MetalLBConfig `json:"metallb,omitempty"`
+}
+
+// MetalLBConfig configures the MetalLB single-pool L2 installation.
+type MetalLBConfig struct {
+	// addressPool is the address range MetalLB will advertise via L2.
+	// Accepts either CIDR notation ("192.168.1.0/24") or a hyphenated range
+	// ("192.168.1.240-192.168.1.250").
+	// +kubebuilder:validation:Required
+	AddressPool string `json:"addressPool"`
+
+	// version pins the MetalLB Helm chart version. Defaults to a value chosen
+	// by the operator if unset.
+	// +optional
+	Version string `json:"version,omitempty"`
+}
+
+// ComponentStatus reports the install state of a single prerequisite component.
+type ComponentStatus struct {
+	// ready is true when the component is installed and healthy on the target cluster.
+	// +optional
+	Ready bool `json:"ready,omitempty"`
+
+	// skipped is true when the component was disabled in spec or detected as
+	// pre-existing and therefore not managed by this resource.
+	// +optional
+	Skipped bool `json:"skipped,omitempty"`
+
+	// installedVersion is the chart/version actually deployed on the target cluster.
+	// +optional
+	InstalledVersion string `json:"installedVersion,omitempty"`
+
+	// message carries a human-readable description of the component's current state.
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
+// ComponentStatuses aggregates per-component install state.
+type ComponentStatuses struct {
+	// +optional
+	CertManager ComponentStatus `json:"certManager,omitzero"`
+	// +optional
+	Ingress ComponentStatus `json:"ingress,omitzero"`
+	// +optional
+	LoadBalancer ComponentStatus `json:"loadBalancer,omitzero"`
 }
 
 // ClusterPrerequisitesStatus defines the observed state of ClusterPrerequisites.
 type ClusterPrerequisitesStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// ready is true when all non-skipped components are installed and healthy.
+	// +optional
+	Ready bool `json:"ready,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// components reports per-component install state.
+	// +optional
+	Components ComponentStatuses `json:"components,omitzero"`
+
+	// observedGeneration is the .metadata.generation the status was last reconciled against.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions represent the current state of the ClusterPrerequisites resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// Standard condition types: "Available", "Progressing", "Degraded".
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,6 +181,9 @@ type ClusterPrerequisitesStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetClusterRef.name`
+// +kubebuilder:printcolumn:name="Ready",type=boolean,JSONPath=`.status.ready`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // ClusterPrerequisites is the Schema for the clusterprerequisites API
 type ClusterPrerequisites struct {

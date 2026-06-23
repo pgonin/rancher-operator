@@ -14,7 +14,17 @@ spec:
     singular: clusterprerequisites
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.targetClusterRef.name
+      name: Target
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: ClusterPrerequisites is the Schema for the clusterprerequisites
@@ -40,25 +50,173 @@ spec:
           spec:
             description: spec defines the desired state of ClusterPrerequisites
             properties:
-              foo:
-                description: foo is an example field of ClusterPrerequisites. Edit
-                  clusterprerequisites_types.go to remove/update
-                type: string
+              certManager:
+                description: |-
+                  certManager configures the cert-manager installation. If omitted, cert-manager
+                  is not managed by this resource and is reported as skipped.
+                properties:
+                  enabled:
+                    default: true
+                    description: enabled controls whether cert-manager is installed.
+                    type: boolean
+                  version:
+                    description: |-
+                      version pins the cert-manager Helm chart version. Defaults to a value
+                      chosen by the operator if unset.
+                    type: string
+                required:
+                - enabled
+                type: object
+              ingress:
+                description: |-
+                  ingress configures the ingress controller installation. If omitted, no ingress
+                  controller is managed and the component is reported as skipped.
+                properties:
+                  enabled:
+                    default: true
+                    description: enabled controls whether the ingress controller is
+                      installed.
+                    type: boolean
+                  type:
+                    default: traefik
+                    description: |-
+                      type selects which ingress controller to install. Currently only "traefik"
+                      is supported.
+                    enum:
+                    - traefik
+                    type: string
+                  version:
+                    description: |-
+                      version pins the ingress controller Helm chart version. Defaults to a value
+                      chosen by the operator if unset.
+                    type: string
+                required:
+                - enabled
+                type: object
+              loadBalancer:
+                description: |-
+                  loadBalancer configures the load-balancer strategy. If omitted, the load
+                  balancer is reported as skipped.
+                properties:
+                  metallb:
+                    description: metallb carries MetalLB-specific configuration. Required
+                      when type is "metallb".
+                    properties:
+                      addressPool:
+                        description: |-
+                          addressPool is the address range MetalLB will advertise via L2.
+                          Accepts either CIDR notation ("192.168.1.0/24") or a hyphenated range
+                          ("192.168.1.240-192.168.1.250").
+                        type: string
+                      version:
+                        description: |-
+                          version pins the MetalLB Helm chart version. Defaults to a value chosen
+                          by the operator if unset.
+                        type: string
+                    required:
+                    - addressPool
+                    type: object
+                  type:
+                    description: type selects the load-balancer strategy.
+                    enum:
+                    - cloud
+                    - metallb
+                    - none
+                    type: string
+                required:
+                - type
+                type: object
+              targetClusterRef:
+                description: |-
+                  targetClusterRef points to a TargetCluster in the same namespace where the
+                  prerequisite components will be installed.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - targetClusterRef
             type: object
           status:
             description: status defines the observed state of ClusterPrerequisites
             properties:
+              components:
+                description: components reports per-component install state.
+                properties:
+                  certManager:
+                    description: ComponentStatus reports the install state of a single
+                      prerequisite component.
+                    properties:
+                      installedVersion:
+                        description: installedVersion is the chart/version actually
+                          deployed on the target cluster.
+                        type: string
+                      message:
+                        description: message carries a human-readable description
+                          of the component's current state.
+                        type: string
+                      ready:
+                        description: ready is true when the component is installed
+                          and healthy on the target cluster.
+                        type: boolean
+                      skipped:
+                        description: |-
+                          skipped is true when the component was disabled in spec or detected as
+                          pre-existing and therefore not managed by this resource.
+                        type: boolean
+                    type: object
+                  ingress:
+                    description: ComponentStatus reports the install state of a single
+                      prerequisite component.
+                    properties:
+                      installedVersion:
+                        description: installedVersion is the chart/version actually
+                          deployed on the target cluster.
+                        type: string
+                      message:
+                        description: message carries a human-readable description
+                          of the component's current state.
+                        type: string
+                      ready:
+                        description: ready is true when the component is installed
+                          and healthy on the target cluster.
+                        type: boolean
+                      skipped:
+                        description: |-
+                          skipped is true when the component was disabled in spec or detected as
+                          pre-existing and therefore not managed by this resource.
+                        type: boolean
+                    type: object
+                  loadBalancer:
+                    description: ComponentStatus reports the install state of a single
+                      prerequisite component.
+                    properties:
+                      installedVersion:
+                        description: installedVersion is the chart/version actually
+                          deployed on the target cluster.
+                        type: string
+                      message:
+                        description: message carries a human-readable description
+                          of the component's current state.
+                        type: string
+                      ready:
+                        description: ready is true when the component is installed
+                          and healthy on the target cluster.
+                        type: boolean
+                      skipped:
+                        description: |-
+                          skipped is true when the component was disabled in spec or detected as
+                          pre-existing and therefore not managed by this resource.
+                        type: boolean
+                    type: object
+                type: object
               conditions:
                 description: |-
                   conditions represent the current state of the ClusterPrerequisites resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Standard condition types: "Available", "Progressing", "Degraded".
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -117,6 +275,15 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              observedGeneration:
+                description: observedGeneration is the .metadata.generation the status
+                  was last reconciled against.
+                format: int64
+                type: integer
+              ready:
+                description: ready is true when all non-skipped components are installed
+                  and healthy.
+                type: boolean
             type: object
         required:
         - spec
