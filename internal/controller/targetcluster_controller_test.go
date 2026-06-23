@@ -54,7 +54,14 @@ var _ = Describe("TargetCluster Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: corev1alpha1.TargetClusterSpec{
+						Type: corev1alpha1.TargetClusterTypeBYO,
+						BYO: &corev1alpha1.BYOSpec{
+							KubeconfigSecretRef: corev1alpha1.KubeconfigSecretRef{
+								Name: "test-kubeconfig",
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}
