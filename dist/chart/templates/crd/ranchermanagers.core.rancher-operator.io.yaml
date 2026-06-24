@@ -1,0 +1,271 @@
+{{- if .Values.crd.enabled }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: ranchermanagers.core.rancher-operator.io
+spec:
+  group: core.rancher-operator.io
+  names:
+    kind: RancherManager
+    listKind: RancherManagerList
+    plural: ranchermanagers
+    singular: ranchermanager
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.targetClusterRef.name
+      name: Target
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.installedVersion
+      name: Version
+      type: string
+    - jsonPath: .status.url
+      name: URL
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: RancherManager is the Schema for the ranchermanagers API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of RancherManager
+            properties:
+              bootstrapPasswordSecretRef:
+                description: |-
+                  bootstrapPasswordSecretRef references a Secret in the same namespace
+                  holding the initial admin bootstrap password.
+                properties:
+                  key:
+                    default: password
+                    description: key within the Secret holding the password bytes.
+                    type: string
+                  name:
+                    description: name is the Secret name in the same namespace as
+                      the RancherManager.
+                    type: string
+                required:
+                - name
+                type: object
+              hostname:
+                description: hostname is the DNS name at which Rancher Manager will
+                  be reachable.
+                type: string
+              ingressClass:
+                default: traefik
+                description: |-
+                  ingressClass attached to Rancher's Ingress. Defaults to "traefik" to match
+                  the ClusterPrerequisites default.
+                type: string
+              prerequisitesRef:
+                description: |-
+                  prerequisitesRef optionally references a ClusterPrerequisites resource
+                  that must be Ready before installing or upgrading Rancher Manager.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    type: string
+                required:
+                - name
+                type: object
+              replicas:
+                default: 3
+                description: replicas controls how many Rancher Manager pods to run.
+                format: int32
+                minimum: 1
+                type: integer
+              targetClusterRef:
+                description: |-
+                  targetClusterRef points to a TargetCluster in the same namespace where
+                  Rancher Manager will be installed.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    type: string
+                required:
+                - name
+                type: object
+              tls:
+                description: tls configures the TLS source for the Rancher ingress.
+                properties:
+                  letsEncrypt:
+                    description: letsEncrypt configures ACME issuance. Required when
+                      source is "letsEncrypt".
+                    properties:
+                      email:
+                        description: email registered with the ACME provider.
+                        type: string
+                      environment:
+                        default: production
+                        description: environment selects the production or staging
+                          ACME endpoint.
+                        enum:
+                        - production
+                        - staging
+                        type: string
+                    required:
+                    - email
+                    type: object
+                  secret:
+                    description: |-
+                      secret references a kubernetes.io/tls Secret in the same namespace.
+                      Required when source is "secret".
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  source:
+                    description: source selects the TLS strategy.
+                    enum:
+                    - rancher
+                    - letsEncrypt
+                    - secret
+                    type: string
+                required:
+                - source
+                type: object
+              version:
+                description: |-
+                  version is the Rancher Manager Helm chart version to deploy, e.g. "2.10.1".
+                  Edit this field to trigger an upgrade.
+                type: string
+            required:
+            - bootstrapPasswordSecretRef
+            - hostname
+            - targetClusterRef
+            - tls
+            - version
+            type: object
+          status:
+            description: status defines the observed state of RancherManager
+            properties:
+              availableUpgrades:
+                description: |-
+                  availableUpgrades lists chart versions newer than installedVersion that the
+                  operator has observed in the upstream Rancher Helm repository.
+                items:
+                  type: string
+                type: array
+              conditions:
+                description: |-
+                  conditions represent the current state of the RancherManager resource.
+                  Standard condition types: "Available", "Progressing", "Degraded".
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              installedVersion:
+                description: installedVersion is the chart version currently deployed
+                  on the target cluster.
+                type: string
+              observedGeneration:
+                description: observedGeneration is the .metadata.generation the status
+                  was last reconciled against.
+                format: int64
+                type: integer
+              phase:
+                description: phase summarizes the install lifecycle.
+                enum:
+                - Pending
+                - Installing
+                - Available
+                - Upgrading
+                - Degraded
+                type: string
+              url:
+                description: url is the full URL of the Rancher Manager UI/API once
+                  available.
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}

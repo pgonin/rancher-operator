@@ -1,0 +1,52 @@
+apiVersion: rbac.authorization.k8s.io/v1
+{{- if .Values.rbac.namespaced }}
+kind: Role
+{{- else }}
+kind: ClusterRole
+{{- end }}
+metadata:
+{{- if .Values.rbac.namespaced }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
+  name: {{ include "rancher-operator.resourceName" (dict "suffix" "manager-role" "context" $) }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - core.rancher-operator.io
+  resources:
+  - clusterprerequisites
+  - ranchermanagers
+  - targetclusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - core.rancher-operator.io
+  resources:
+  - clusterprerequisites/finalizers
+  - ranchermanagers/finalizers
+  - targetclusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - core.rancher-operator.io
+  resources:
+  - clusterprerequisites/status
+  - ranchermanagers/status
+  - targetclusters/status
+  verbs:
+  - get
+  - patch
+  - update

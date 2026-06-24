@@ -1,0 +1,326 @@
+{{- if .Values.crd.enabled }}
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: clusterprerequisites.core.rancher-operator.io
+spec:
+  group: core.rancher-operator.io
+  names:
+    kind: ClusterPrerequisites
+    listKind: ClusterPrerequisitesList
+    plural: clusterprerequisites
+    singular: clusterprerequisites
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.targetClusterRef.name
+      name: Target
+      type: string
+    - jsonPath: .status.ready
+      name: Ready
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ClusterPrerequisites is the Schema for the clusterprerequisites
+          API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of ClusterPrerequisites
+            properties:
+              applicationCollectionCredentialsSecretRef:
+                description: |-
+                  applicationCollectionCredentialsSecretRef references a Secret in the same
+                  namespace carrying SUSE Application Collection credentials. The Secret
+                  must contain "username" and "password" keys. These credentials are used
+                  to (a) pull Helm charts over OCI from dp.apps.rancher.io and (b) provision
+                  an image-pull Secret in each component's namespace on the target cluster
+                  so chart pods can pull their container images. Required for any component
+                  that is actually installed (i.e. not skipped, not bundled).
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    type: string
+                required:
+                - name
+                type: object
+              certManager:
+                description: |-
+                  certManager configures the cert-manager installation. If omitted, cert-manager
+                  is not managed by this resource and is reported as skipped.
+                properties:
+                  enabled:
+                    default: true
+                    description: enabled controls whether cert-manager is installed.
+                    type: boolean
+                  version:
+                    description: |-
+                      version pins the cert-manager Helm chart version. Defaults to a value
+                      chosen by the operator if unset.
+                    type: string
+                required:
+                - enabled
+                type: object
+              ingress:
+                description: |-
+                  ingress configures the ingress controller installation. If omitted, no ingress
+                  controller is managed and the component is reported as skipped.
+                properties:
+                  enabled:
+                    default: true
+                    description: enabled controls whether the ingress controller is
+                      installed.
+                    type: boolean
+                  type:
+                    default: traefik
+                    description: |-
+                      type selects which ingress controller to install. Currently only "traefik"
+                      is supported.
+                    enum:
+                    - traefik
+                    type: string
+                  useBundled:
+                    default: auto
+                    description: |-
+                      useBundled controls whether the operator installs Traefik or trusts the
+                      target cluster's bundled copy. "auto" (default) inspects the cluster's
+                      Kubernetes version and skips install when it carries the "+k3s" or
+                      "+rke2" suffix; "use" always skips install; "install" always runs Helm.
+                    enum:
+                    - auto
+                    - use
+                    - install
+                    type: string
+                  version:
+                    description: |-
+                      version pins the ingress controller Helm chart version. Defaults to a value
+                      chosen by the operator if unset.
+                    type: string
+                required:
+                - enabled
+                type: object
+              loadBalancer:
+                description: |-
+                  loadBalancer configures the load-balancer strategy. If omitted, the load
+                  balancer is reported as skipped.
+                properties:
+                  metallb:
+                    description: metallb carries MetalLB-specific configuration. Required
+                      when type is "metallb".
+                    properties:
+                      addressPool:
+                        description: |-
+                          addressPool is the address range MetalLB will advertise via L2.
+                          Accepts either CIDR notation ("192.168.1.0/24") or a hyphenated range
+                          ("192.168.1.240-192.168.1.250").
+                        type: string
+                      version:
+                        description: |-
+                          version pins the MetalLB Helm chart version. Defaults to a value chosen
+                          by the operator if unset.
+                        type: string
+                    required:
+                    - addressPool
+                    type: object
+                  type:
+                    description: type selects the load-balancer strategy.
+                    enum:
+                    - cloud
+                    - metallb
+                    - none
+                    type: string
+                required:
+                - type
+                type: object
+              targetClusterRef:
+                description: |-
+                  targetClusterRef points to a TargetCluster in the same namespace where the
+                  prerequisite components will be installed.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - targetClusterRef
+            type: object
+          status:
+            description: status defines the observed state of ClusterPrerequisites
+            properties:
+              components:
+                description: components reports per-component install state.
+                properties:
+                  certManager:
+                    description: ComponentStatus reports the install state of a single
+                      prerequisite component.
+                    properties:
+                      installedVersion:
+                        description: installedVersion is the chart/version actually
+                          deployed on the target cluster.
+                        type: string
+                      message:
+                        description: message carries a human-readable description
+                          of the component's current state.
+                        type: string
+                      ready:
+                        description: ready is true when the component is installed
+                          and healthy on the target cluster.
+                        type: boolean
+                      skipped:
+                        description: |-
+                          skipped is true when the component was disabled in spec or detected as
+                          pre-existing and therefore not managed by this resource.
+                        type: boolean
+                    type: object
+                  ingress:
+                    description: ComponentStatus reports the install state of a single
+                      prerequisite component.
+                    properties:
+                      installedVersion:
+                        description: installedVersion is the chart/version actually
+                          deployed on the target cluster.
+                        type: string
+                      message:
+                        description: message carries a human-readable description
+                          of the component's current state.
+                        type: string
+                      ready:
+                        description: ready is true when the component is installed
+                          and healthy on the target cluster.
+                        type: boolean
+                      skipped:
+                        description: |-
+                          skipped is true when the component was disabled in spec or detected as
+                          pre-existing and therefore not managed by this resource.
+                        type: boolean
+                    type: object
+                  loadBalancer:
+                    description: ComponentStatus reports the install state of a single
+                      prerequisite component.
+                    properties:
+                      installedVersion:
+                        description: installedVersion is the chart/version actually
+                          deployed on the target cluster.
+                        type: string
+                      message:
+                        description: message carries a human-readable description
+                          of the component's current state.
+                        type: string
+                      ready:
+                        description: ready is true when the component is installed
+                          and healthy on the target cluster.
+                        type: boolean
+                      skipped:
+                        description: |-
+                          skipped is true when the component was disabled in spec or detected as
+                          pre-existing and therefore not managed by this resource.
+                        type: boolean
+                    type: object
+                type: object
+              conditions:
+                description: |-
+                  conditions represent the current state of the ClusterPrerequisites resource.
+                  Standard condition types: "Available", "Progressing", "Degraded".
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: observedGeneration is the .metadata.generation the status
+                  was last reconciled against.
+                format: int64
+                type: integer
+              ready:
+                description: ready is true when all non-skipped components are installed
+                  and healthy.
+                type: boolean
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end }}
