@@ -21,38 +21,149 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// TLSSource enumerates strategies for provisioning Rancher Manager's TLS cert.
+// Mirrors the Rancher Helm chart's `ingress.tls.source` values.
+// +kubebuilder:validation:Enum=rancher;letsEncrypt;secret
+type TLSSource string
 
-// RancherManagerSpec defines the desired state of RancherManager
+const (
+	// TLSSourceRancher uses a Rancher-generated self-signed CA.
+	TLSSourceRancher TLSSource = "rancher"
+	// TLSSourceLetsEncrypt requests certs from Let's Encrypt via cert-manager (HTTP-01).
+	TLSSourceLetsEncrypt TLSSource = "letsEncrypt"
+	// TLSSourceSecret uses a user-provided kubernetes.io/tls Secret.
+	TLSSourceSecret TLSSource = "secret"
+)
+
+// LetsEncryptEnv selects between ACME endpoints.
+// +kubebuilder:validation:Enum=production;staging
+type LetsEncryptEnv string
+
+const (
+	LetsEncryptEnvProduction LetsEncryptEnv = "production"
+	LetsEncryptEnvStaging    LetsEncryptEnv = "staging"
+)
+
+// RancherManagerPhase summarizes the install lifecycle for UI consumption.
+// +kubebuilder:validation:Enum=Pending;Installing;Available;Upgrading;Degraded
+type RancherManagerPhase string
+
+const (
+	RancherManagerPhasePending    RancherManagerPhase = "Pending"
+	RancherManagerPhaseInstalling RancherManagerPhase = "Installing"
+	RancherManagerPhaseAvailable  RancherManagerPhase = "Available"
+	RancherManagerPhaseUpgrading  RancherManagerPhase = "Upgrading"
+	RancherManagerPhaseDegraded   RancherManagerPhase = "Degraded"
+)
+
+// RancherManagerSpec defines the desired state of RancherManager.
 type RancherManagerSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// targetClusterRef points to a TargetCluster in the same namespace where
+	// Rancher Manager will be installed.
+	// +kubebuilder:validation:Required
+	TargetClusterRef LocalObjectReference `json:"targetClusterRef"`
 
-	// foo is an example field of RancherManager. Edit ranchermanager_types.go to remove/update
+	// prerequisitesRef optionally references a ClusterPrerequisites resource
+	// that must be Ready before installing or upgrading Rancher Manager.
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	PrerequisitesRef *LocalObjectReference `json:"prerequisitesRef,omitempty"`
+
+	// version is the Rancher Manager Helm chart version to deploy, e.g. "2.10.1".
+	// Edit this field to trigger an upgrade.
+	// +kubebuilder:validation:Required
+	Version string `json:"version"`
+
+	// hostname is the DNS name at which Rancher Manager will be reachable.
+	// +kubebuilder:validation:Required
+	Hostname string `json:"hostname"`
+
+	// tls configures the TLS source for the Rancher ingress.
+	// +kubebuilder:validation:Required
+	TLS RancherTLS `json:"tls"`
+
+	// bootstrapPasswordSecretRef references a Secret in the same namespace
+	// holding the initial admin bootstrap password.
+	// +kubebuilder:validation:Required
+	BootstrapPasswordSecretRef BootstrapPasswordSecretRef `json:"bootstrapPasswordSecretRef"`
+
+	// ingressClass attached to Rancher's Ingress. Defaults to "traefik" to match
+	// the ClusterPrerequisites default.
+	// +kubebuilder:default=traefik
+	// +optional
+	IngressClass string `json:"ingressClass,omitempty"`
+
+	// replicas controls how many Rancher Manager pods to run.
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	Replicas int32 `json:"replicas,omitempty"`
+}
+
+// RancherTLS configures TLS for the Rancher Manager ingress.
+type RancherTLS struct {
+	// source selects the TLS strategy.
+	// +kubebuilder:validation:Required
+	Source TLSSource `json:"source"`
+
+	// letsEncrypt configures ACME issuance. Required when source is "letsEncrypt".
+	// +optional
+	LetsEncrypt *LetsEncryptConfig `json:"letsEncrypt,omitempty"`
+
+	// secret references a kubernetes.io/tls Secret in the same namespace.
+	// Required when source is "secret".
+	// +optional
+	Secret *LocalObjectReference `json:"secret,omitempty"`
+}
+
+// LetsEncryptConfig carries ACME registration details.
+type LetsEncryptConfig struct {
+	// email registered with the ACME provider.
+	// +kubebuilder:validation:Required
+	Email string `json:"email"`
+
+	// environment selects the production or staging ACME endpoint.
+	// +kubebuilder:default=production
+	// +optional
+	Environment LetsEncryptEnv `json:"environment,omitempty"`
+}
+
+// BootstrapPasswordSecretRef references a Secret carrying the initial admin password.
+type BootstrapPasswordSecretRef struct {
+	// name is the Secret name in the same namespace as the RancherManager.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// key within the Secret holding the password bytes.
+	// +kubebuilder:default=password
+	// +optional
+	Key string `json:"key,omitempty"`
 }
 
 // RancherManagerStatus defines the observed state of RancherManager.
 type RancherManagerStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// phase summarizes the install lifecycle.
+	// +optional
+	Phase RancherManagerPhase `json:"phase,omitempty"`
 
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+	// installedVersion is the chart version currently deployed on the target cluster.
+	// +optional
+	InstalledVersion string `json:"installedVersion,omitempty"`
+
+	// availableUpgrades lists chart versions newer than installedVersion that the
+	// operator has observed in the upstream Rancher Helm repository.
+	// +optional
+	AvailableUpgrades []string `json:"availableUpgrades,omitempty"`
+
+	// url is the full URL of the Rancher Manager UI/API once available.
+	// +optional
+	URL string `json:"url,omitempty"`
+
+	// observedGeneration is the .metadata.generation the status was last reconciled against.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// conditions represent the current state of the RancherManager resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
+	// Standard condition types: "Available", "Progressing", "Degraded".
 	// +listType=map
 	// +listMapKey=type
 	// +optional
@@ -61,6 +172,11 @@ type RancherManagerStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetClusterRef.name`
+// +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+// +kubebuilder:printcolumn:name="Version",type=string,JSONPath=`.status.installedVersion`
+// +kubebuilder:printcolumn:name="URL",type=string,JSONPath=`.status.url`
+// +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // RancherManager is the Schema for the ranchermanagers API
 type RancherManager struct {

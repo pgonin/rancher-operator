@@ -54,7 +54,17 @@ var _ = Describe("RancherManager Controller", func() {
 						Name:      resourceName,
 						Namespace: resourceNamespace,
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: corev1alpha1.RancherManagerSpec{
+						TargetClusterRef: corev1alpha1.LocalObjectReference{Name: "test-target"},
+						Version:          "2.10.1",
+						Hostname:         "rancher.test.local",
+						TLS: corev1alpha1.RancherTLS{
+							Source: corev1alpha1.TLSSourceRancher,
+						},
+						BootstrapPasswordSecretRef: corev1alpha1.BootstrapPasswordSecretRef{
+							Name: "test-bootstrap",
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

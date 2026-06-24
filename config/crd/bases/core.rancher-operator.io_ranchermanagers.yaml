@@ -14,7 +14,23 @@ spec:
     singular: ranchermanager
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .spec.targetClusterRef.name
+      name: Target
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.installedVersion
+      name: Version
+      type: string
+    - jsonPath: .status.url
+      name: URL
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: RancherManager is the Schema for the ranchermanagers API
@@ -39,25 +55,128 @@ spec:
           spec:
             description: spec defines the desired state of RancherManager
             properties:
-              foo:
-                description: foo is an example field of RancherManager. Edit ranchermanager_types.go
-                  to remove/update
+              bootstrapPasswordSecretRef:
+                description: |-
+                  bootstrapPasswordSecretRef references a Secret in the same namespace
+                  holding the initial admin bootstrap password.
+                properties:
+                  key:
+                    default: password
+                    description: key within the Secret holding the password bytes.
+                    type: string
+                  name:
+                    description: name is the Secret name in the same namespace as
+                      the RancherManager.
+                    type: string
+                required:
+                - name
+                type: object
+              hostname:
+                description: hostname is the DNS name at which Rancher Manager will
+                  be reachable.
                 type: string
+              ingressClass:
+                default: traefik
+                description: |-
+                  ingressClass attached to Rancher's Ingress. Defaults to "traefik" to match
+                  the ClusterPrerequisites default.
+                type: string
+              prerequisitesRef:
+                description: |-
+                  prerequisitesRef optionally references a ClusterPrerequisites resource
+                  that must be Ready before installing or upgrading Rancher Manager.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    type: string
+                required:
+                - name
+                type: object
+              replicas:
+                default: 3
+                description: replicas controls how many Rancher Manager pods to run.
+                format: int32
+                minimum: 1
+                type: integer
+              targetClusterRef:
+                description: |-
+                  targetClusterRef points to a TargetCluster in the same namespace where
+                  Rancher Manager will be installed.
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    type: string
+                required:
+                - name
+                type: object
+              tls:
+                description: tls configures the TLS source for the Rancher ingress.
+                properties:
+                  letsEncrypt:
+                    description: letsEncrypt configures ACME issuance. Required when
+                      source is "letsEncrypt".
+                    properties:
+                      email:
+                        description: email registered with the ACME provider.
+                        type: string
+                      environment:
+                        default: production
+                        description: environment selects the production or staging
+                          ACME endpoint.
+                        enum:
+                        - production
+                        - staging
+                        type: string
+                    required:
+                    - email
+                    type: object
+                  secret:
+                    description: |-
+                      secret references a kubernetes.io/tls Secret in the same namespace.
+                      Required when source is "secret".
+                    properties:
+                      name:
+                        description: name of the referenced object.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  source:
+                    description: source selects the TLS strategy.
+                    enum:
+                    - rancher
+                    - letsEncrypt
+                    - secret
+                    type: string
+                required:
+                - source
+                type: object
+              version:
+                description: |-
+                  version is the Rancher Manager Helm chart version to deploy, e.g. "2.10.1".
+                  Edit this field to trigger an upgrade.
+                type: string
+            required:
+            - bootstrapPasswordSecretRef
+            - hostname
+            - targetClusterRef
+            - tls
+            - version
             type: object
           status:
             description: status defines the observed state of RancherManager
             properties:
+              availableUpgrades:
+                description: |-
+                  availableUpgrades lists chart versions newer than installedVersion that the
+                  operator has observed in the upstream Rancher Helm repository.
+                items:
+                  type: string
+                type: array
               conditions:
                 description: |-
                   conditions represent the current state of the RancherManager resource.
-                  Each condition has a unique type and reflects the status of a specific aspect of the resource.
-
-                  Standard condition types include:
-                  - "Available": the resource is fully functional
-                  - "Progressing": the resource is being created or updated
-                  - "Degraded": the resource failed to reach or maintain its desired state
-
-                  The status of each condition is one of True, False, or Unknown.
+                  Standard condition types: "Available", "Progressing", "Degraded".
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -116,6 +235,28 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              installedVersion:
+                description: installedVersion is the chart version currently deployed
+                  on the target cluster.
+                type: string
+              observedGeneration:
+                description: observedGeneration is the .metadata.generation the status
+                  was last reconciled against.
+                format: int64
+                type: integer
+              phase:
+                description: phase summarizes the install lifecycle.
+                enum:
+                - Pending
+                - Installing
+                - Available
+                - Upgrading
+                - Degraded
+                type: string
+              url:
+                description: url is the full URL of the Rancher Manager UI/API once
+                  available.
+                type: string
             type: object
         required:
         - spec
