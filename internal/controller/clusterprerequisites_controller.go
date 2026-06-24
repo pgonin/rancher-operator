@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,17 +31,25 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	corev1alpha1 "github.com/pgonin/rancher-operator/api/v1alpha1"
+	"github.com/pgonin/rancher-operator/internal/helm"
 )
 
 const (
 	prereqReasonAvailable          = "AllComponentsReady"
-	prereqReasonInstallersPending  = "InstallersNotImplemented"
+	prereqReasonComponentsPending  = "ComponentsNotReady"
 	prereqReasonMissingTarget      = "MissingTargetCluster"
 	prereqReasonTargetNotReady     = "TargetClusterNotReady"
+	prereqReasonKubeconfigMissing  = "MissingKubeconfig"
 	prereqMessageNotImplemented    = "installer not yet implemented in this build"
 	prereqMessageComponentDisabled = "component disabled by spec"
 	prereqMessageComponentNotSet   = "component not requested in spec"
 	prereqMessageLoadBalancerCloud = "no installation required when type is cloud"
+
+	certManagerRepoURL        = "https://charts.jetstack.io"
+	certManagerChartName      = "cert-manager"
+	certManagerReleaseName    = "cert-manager"
+	certManagerNamespace      = "cert-manager"
+	defaultCertManagerVersion = "v1.18.2"
 )
 
 // ClusterPrerequisitesReconciler reconciles a ClusterPrerequisites object
@@ -82,8 +91,17 @@ func (r *ClusterPrerequisitesReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{RequeueAfter: requeueAfterError}, r.writePrereqStatus(ctx, &cp)
 	}
 
-	// Per-component status. Installers land in subsequent commits.
-	cp.Status.Components.CertManager = certManagerComponentStatus(cp.Spec.CertManager)
+	// Fetch the target cluster's kubeconfig via its BYO Secret. Only the BYO
+	// provisioning mode is implemented in v1alpha1; other modes are gated
+	// earlier in the TargetCluster reconciler.
+	kubeconfig, err := r.resolveTargetKubeconfig(ctx, &tc)
+	if err != nil {
+		r.markUnavailable(&cp, prereqReasonKubeconfigMissing, err.Error())
+		return ctrl.Result{RequeueAfter: requeueAfterError}, r.writePrereqStatus(ctx, &cp)
+	}
+	helmGetter := helm.NewKubeconfigRESTClientGetter(kubeconfig)
+
+	cp.Status.Components.CertManager = r.reconcileCertManager(ctx, helmGetter, cp.Spec.CertManager)
 	cp.Status.Components.Ingress = ingressComponentStatus(cp.Spec.Ingress)
 	cp.Status.Components.LoadBalancer = loadBalancerComponentStatus(cp.Spec.LoadBalancer)
 
@@ -103,8 +121,8 @@ func (r *ClusterPrerequisitesReconciler) Reconcile(ctx context.Context, req ctrl
 		cond.Message = "all requested components are installed and healthy"
 	} else {
 		cond.Status = metav1.ConditionFalse
-		cond.Reason = prereqReasonInstallersPending
-		cond.Message = "one or more component installers are not yet implemented"
+		cond.Reason = prereqReasonComponentsPending
+		cond.Message = "one or more components are not yet ready"
 	}
 	meta.SetStatusCondition(&cp.Status.Conditions, cond)
 
@@ -116,16 +134,77 @@ func (r *ClusterPrerequisitesReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{RequeueAfter: requeueAfterSuccess}, nil
 }
 
-// certManagerComponentStatus returns the status for the cert-manager component
-// based purely on spec. Real install detection lands in a later commit.
-func certManagerComponentStatus(spec *corev1alpha1.CertManagerComponent) corev1alpha1.ComponentStatus {
+// reconcileCertManager installs or upgrades cert-manager on the target cluster
+// via Helm, then returns a ComponentStatus reflecting the outcome. Failures
+// surface as Ready=false with a Message; the next reconcile retries.
+func (r *ClusterPrerequisitesReconciler) reconcileCertManager(
+	ctx context.Context,
+	getter *helm.KubeconfigRESTClientGetter,
+	spec *corev1alpha1.CertManagerComponent,
+) corev1alpha1.ComponentStatus {
 	if spec == nil {
 		return corev1alpha1.ComponentStatus{Skipped: true, Message: prereqMessageComponentNotSet}
 	}
 	if !spec.Enabled {
 		return corev1alpha1.ComponentStatus{Skipped: true, Message: prereqMessageComponentDisabled}
 	}
-	return corev1alpha1.ComponentStatus{Message: prereqMessageNotImplemented}
+
+	version := spec.Version
+	if version == "" {
+		version = defaultCertManagerVersion
+	}
+
+	chart, err := helm.LoadChartFromRepo(ctx, certManagerRepoURL, certManagerChartName, version)
+	if err != nil {
+		return corev1alpha1.ComponentStatus{Message: fmt.Sprintf("loading chart: %v", err)}
+	}
+
+	rel, err := helm.InstallOrUpgrade(ctx, getter, helm.InstallOrUpgradeOptions{
+		ReleaseName:     certManagerReleaseName,
+		Namespace:       certManagerNamespace,
+		CreateNamespace: true,
+		Chart:           chart,
+		Values: map[string]any{
+			"crds": map[string]any{"enabled": true},
+		},
+	})
+	if err != nil {
+		return corev1alpha1.ComponentStatus{Message: fmt.Sprintf("helm: %v", err)}
+	}
+
+	installed := version
+	if rel != nil && rel.Chart != nil && rel.Chart.Metadata != nil && rel.Chart.Metadata.Version != "" {
+		installed = rel.Chart.Metadata.Version
+	}
+	return corev1alpha1.ComponentStatus{
+		Ready:            true,
+		InstalledVersion: installed,
+		Message:          "cert-manager installed",
+	}
+}
+
+// resolveTargetKubeconfig pulls the kubeconfig bytes from the Secret referenced
+// by the TargetCluster's BYO spec. Returns an error if the TargetCluster is not
+// using the BYO mode or the Secret cannot be read.
+func (r *ClusterPrerequisitesReconciler) resolveTargetKubeconfig(ctx context.Context, tc *corev1alpha1.TargetCluster) ([]byte, error) {
+	if tc.Spec.Type != corev1alpha1.TargetClusterTypeBYO || tc.Spec.BYO == nil {
+		return nil, fmt.Errorf("TargetCluster %q is not in byo mode", tc.Name)
+	}
+	ref := tc.Spec.BYO.KubeconfigSecretRef
+	key := ref.Key
+	if key == "" {
+		key = "kubeconfig"
+	}
+
+	var secret corev1.Secret
+	if err := r.Get(ctx, types.NamespacedName{Namespace: tc.Namespace, Name: ref.Name}, &secret); err != nil {
+		return nil, fmt.Errorf("reading kubeconfig Secret %q: %w", ref.Name, err)
+	}
+	data, ok := secret.Data[key]
+	if !ok || len(data) == 0 {
+		return nil, fmt.Errorf("Secret %q has no data at key %q", ref.Name, key)
+	}
+	return data, nil
 }
 
 func ingressComponentStatus(spec *corev1alpha1.IngressComponent) corev1alpha1.ComponentStatus {
