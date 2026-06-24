@@ -49,12 +49,40 @@ const (
 	LoadBalancerTypeNone LoadBalancerType = "none"
 )
 
+// IngressBundledMode controls whether to install Traefik or rely on a copy
+// already shipped by the target cluster. K3s and RKE2 ship Traefik by default
+// and re-installing it would conflict with the bundled HelmChart resources.
+// +kubebuilder:validation:Enum=auto;use;install
+type IngressBundledMode string
+
+const (
+	// IngressBundledModeAuto inspects the target cluster's Kubernetes version
+	// and skips installation when it ends in "+k3s" or "+rke2".
+	IngressBundledModeAuto IngressBundledMode = "auto"
+	// IngressBundledModeUse trusts that the cluster already ships an ingress
+	// controller (e.g. K3s/RKE2 bundle) and skips installation unconditionally.
+	IngressBundledModeUse IngressBundledMode = "use"
+	// IngressBundledModeInstall installs the chart unconditionally, even on
+	// K3s/RKE2. Use only when the bundled Traefik has been disabled.
+	IngressBundledModeInstall IngressBundledMode = "install"
+)
+
 // ClusterPrerequisitesSpec defines the desired state of ClusterPrerequisites.
 type ClusterPrerequisitesSpec struct {
 	// targetClusterRef points to a TargetCluster in the same namespace where the
 	// prerequisite components will be installed.
 	// +kubebuilder:validation:Required
 	TargetClusterRef LocalObjectReference `json:"targetClusterRef"`
+
+	// applicationCollectionCredentialsSecretRef references a Secret in the same
+	// namespace carrying SUSE Application Collection credentials. The Secret
+	// must contain "username" and "password" keys. These credentials are used
+	// to (a) pull Helm charts over OCI from dp.apps.rancher.io and (b) provision
+	// an image-pull Secret in each component's namespace on the target cluster
+	// so chart pods can pull their container images. Required for any component
+	// that is actually installed (i.e. not skipped, not bundled).
+	// +optional
+	ApplicationCollectionCredentialsSecretRef *LocalObjectReference `json:"applicationCollectionCredentialsSecretRef,omitempty"`
 
 	// certManager configures the cert-manager installation. If omitted, cert-manager
 	// is not managed by this resource and is reported as skipped.
@@ -95,6 +123,14 @@ type IngressComponent struct {
 	// +kubebuilder:default=traefik
 	// +optional
 	Type IngressType `json:"type,omitempty"`
+
+	// useBundled controls whether the operator installs Traefik or trusts the
+	// target cluster's bundled copy. "auto" (default) inspects the cluster's
+	// Kubernetes version and skips install when it carries the "+k3s" or
+	// "+rke2" suffix; "use" always skips install; "install" always runs Helm.
+	// +kubebuilder:default=auto
+	// +optional
+	UseBundled IngressBundledMode `json:"useBundled,omitempty"`
 
 	// version pins the ingress controller Helm chart version. Defaults to a value
 	// chosen by the operator if unset.

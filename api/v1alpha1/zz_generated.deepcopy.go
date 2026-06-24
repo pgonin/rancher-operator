@@ -134,6 +134,11 @@ func (in *ClusterPrerequisitesList) DeepCopyObject() runtime.Object {
 func (in *ClusterPrerequisitesSpec) DeepCopyInto(out *ClusterPrerequisitesSpec) {
 	*out = *in
 	out.TargetClusterRef = in.TargetClusterRef
+	if in.ApplicationCollectionCredentialsSecretRef != nil {
+		in, out := &in.ApplicationCollectionCredentialsSecretRef, &out.ApplicationCollectionCredentialsSecretRef
+		*out = new(LocalObjectReference)
+		**out = **in
+	}
 	if in.CertManager != nil {
 		in, out := &in.CertManager, &out.CertManager
 		*out = new(CertManagerComponent)

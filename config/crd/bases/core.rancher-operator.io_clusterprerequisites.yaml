@@ -50,6 +50,22 @@ spec:
           spec:
             description: spec defines the desired state of ClusterPrerequisites
             properties:
+              applicationCollectionCredentialsSecretRef:
+                description: |-
+                  applicationCollectionCredentialsSecretRef references a Secret in the same
+                  namespace carrying SUSE Application Collection credentials. The Secret
+                  must contain "username" and "password" keys. These credentials are used
+                  to (a) pull Helm charts over OCI from dp.apps.rancher.io and (b) provision
+                  an image-pull Secret in each component's namespace on the target cluster
+                  so chart pods can pull their container images. Required for any component
+                  that is actually installed (i.e. not skipped, not bundled).
+                properties:
+                  name:
+                    description: name of the referenced object.
+                    type: string
+                required:
+                - name
+                type: object
               certManager:
                 description: |-
                   certManager configures the cert-manager installation. If omitted, cert-manager
@@ -84,6 +100,18 @@ spec:
                       is supported.
                     enum:
                     - traefik
+                    type: string
+                  useBundled:
+                    default: auto
+                    description: |-
+                      useBundled controls whether the operator installs Traefik or trusts the
+                      target cluster's bundled copy. "auto" (default) inspects the cluster's
+                      Kubernetes version and skips install when it carries the "+k3s" or
+                      "+rke2" suffix; "use" always skips install; "install" always runs Helm.
+                    enum:
+                    - auto
+                    - use
+                    - install
                     type: string
                   version:
                     description: |-
