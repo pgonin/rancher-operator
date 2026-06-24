@@ -60,10 +60,7 @@ func LoadChartFromOCI(ctx context.Context, ociRef, version string, creds OCICred
 		return nil, fmt.Errorf("expected oci:// URL, got %q", ociRef)
 	}
 	stripped := strings.TrimPrefix(ociRef, "oci://")
-	host := stripped
-	if i := strings.Index(stripped, "/"); i >= 0 {
-		host = stripped[:i]
-	}
+	host, _, _ := strings.Cut(stripped, "/")
 
 	client, err := registry.NewClient()
 	if err != nil {
@@ -170,7 +167,7 @@ func httpGet(ctx context.Context, target string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s: status %d", target, resp.StatusCode)
 	}

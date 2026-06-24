@@ -347,7 +347,7 @@ func (r *ClusterPrerequisitesReconciler) resolveTargetKubeconfig(ctx context.Con
 	}
 	data, ok := secret.Data[key]
 	if !ok || len(data) == 0 {
-		return nil, fmt.Errorf("Secret %q has no data at key %q", ref.Name, key)
+		return nil, fmt.Errorf("secret %q has no data at key %q", ref.Name, key)
 	}
 	return data, nil
 }
