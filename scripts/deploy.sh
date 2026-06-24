@@ -7,11 +7,13 @@
 #   ./scripts/deploy.sh [install|uninstall]
 #
 # Environment variables (all optional):
-#   IMAGE_REPO   container image repository (default: ghcr.io/pgonin/rancher-operator)
-#   IMAGE_TAG    container image tag        (default: latest)
-#   NAMESPACE    namespace to install into  (default: rancher-operator)
-#   RELEASE      helm release name          (default: rancher-operator)
-#   CHART_PATH   path to the helm chart     (default: dist/chart)
+#   IMAGE_REPO     container image repository (default: ghcr.io/pgonin/rancher-operator)
+#   IMAGE_TAG      container image tag        (default: latest)
+#   NAMESPACE      namespace to install into  (default: rancher-operator)
+#   RELEASE        helm release name          (default: rancher-operator)
+#   CHART_PATH     path to the helm chart     (default: dist/chart)
+#   METRICS_SECURE expose metrics over HTTPS  (default: false — set to true
+#                  once cert-manager is installed on the operator's cluster)
 #
 # Re-running 'install' upgrades in place via `helm upgrade --install`.
 
@@ -21,6 +23,7 @@ IMAGE_REPO="${IMAGE_REPO:-ghcr.io/pgonin/rancher-operator}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 NAMESPACE="${NAMESPACE:-rancher-operator}"
 RELEASE="${RELEASE:-rancher-operator}"
+METRICS_SECURE="${METRICS_SECURE:-false}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CHART_PATH="${CHART_PATH:-$SCRIPT_DIR/../dist/chart}"
 
@@ -44,6 +47,7 @@ case "$ACTION" in
       --create-namespace \
       --set "manager.image.repository=$IMAGE_REPO" \
       --set "manager.image.tag=$IMAGE_TAG" \
+      --set "metrics.secure=$METRICS_SECURE" \
       --wait \
       --timeout 5m
     echo
