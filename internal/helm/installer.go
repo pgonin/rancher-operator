@@ -31,6 +31,7 @@ import (
 	"helm.sh/helm/v4/pkg/chart/loader"
 	chartv2 "helm.sh/helm/v4/pkg/chart/v2"
 	"helm.sh/helm/v4/pkg/kube"
+	"helm.sh/helm/v4/pkg/registry"
 	"helm.sh/helm/v4/pkg/release"
 	releasev1 "helm.sh/helm/v4/pkg/release/v1"
 	"helm.sh/helm/v4/pkg/repo/v1"
@@ -41,6 +42,59 @@ const (
 	defaultInstallTimeout = 10 * time.Minute
 	defaultIndexTimeout   = 30 * time.Second
 )
+
+// OCICredentials carries credentials for an OCI Helm registry. Both fields
+// may be empty for anonymous registries; non-empty values trigger a Login.
+type OCICredentials struct {
+	Username string
+	Password string
+}
+
+// LoadChartFromOCI pulls a chart from an OCI Helm registry into memory and
+// loads it. ociRef should be of the form "oci://host/path/chart" (with no
+// trailing tag); the version is appended as a tag.
+func LoadChartFromOCI(ctx context.Context, ociRef, version string, creds OCICredentials) (*chartv2.Chart, error) {
+	_ = ctx // Pull does not yet accept a context; reserved for future helm releases.
+
+	if !strings.HasPrefix(ociRef, "oci://") {
+		return nil, fmt.Errorf("expected oci:// URL, got %q", ociRef)
+	}
+	stripped := strings.TrimPrefix(ociRef, "oci://")
+	host := stripped
+	if i := strings.Index(stripped, "/"); i >= 0 {
+		host = stripped[:i]
+	}
+
+	client, err := registry.NewClient()
+	if err != nil {
+		return nil, fmt.Errorf("creating registry client: %w", err)
+	}
+
+	if creds.Username != "" || creds.Password != "" {
+		if err := client.Login(host, registry.LoginOptBasicAuth(creds.Username, creds.Password)); err != nil {
+			return nil, fmt.Errorf("logging into %s: %w", host, err)
+		}
+	}
+
+	ref := fmt.Sprintf("%s:%s", stripped, version)
+	result, err := client.Pull(ref, registry.PullOptWithChart(true))
+	if err != nil {
+		return nil, fmt.Errorf("pulling %s: %w", ref, err)
+	}
+	if result.Chart == nil || len(result.Chart.Data) == 0 {
+		return nil, fmt.Errorf("pull result for %s carries no chart data", ref)
+	}
+
+	loaded, err := loader.LoadArchive(bytes.NewReader(result.Chart.Data))
+	if err != nil {
+		return nil, fmt.Errorf("loading chart %s: %w", ref, err)
+	}
+	c, ok := loaded.(*chartv2.Chart)
+	if !ok {
+		return nil, fmt.Errorf("chart %s is not an apiVersion v1/v2 chart (got %T)", ref, loaded)
+	}
+	return c, nil
+}
 
 // LoadChartFromRepo fetches the chart matching name@version from a Helm
 // repository URL into memory, then loads it. The repository URL must point
